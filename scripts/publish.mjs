@@ -2,11 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { validateVersion } from './build.mjs';
+import { validatePublication } from './version.mjs';
 
 // A temporary index builds the release tree without changing the checkout or its branch.
 export async function publish({ source, output, version, dryRun = false }) {
-  validateVersion(version);
+  validatePublication(version, dryRun);
   source = await fs.realpath(source);
   output = await fs.realpath(output);
   const git = args => execFileSync('git', ['-C', source, ...args], { encoding: 'utf8' }).trim();

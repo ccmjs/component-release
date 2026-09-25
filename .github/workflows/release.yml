@@ -2,10 +2,6 @@ name: Release component
 on:
   workflow_call:
     inputs:
-      version:
-        description: Component SemVer without v prefix
-        required: true
-        type: string
       tooling-ref:
         description: Same component-release tag or full commit SHA as the workflow uses reference
         required: true
@@ -15,9 +11,13 @@ on:
         default: main
         type: string
       main:
-        description: Optional main .mjs filename; otherwise exactly one ccm.*.mjs is required
+        description: Optional main .js or .mjs filename
         default: ''
         type: string
+      framework:
+        description: Build ccm.js, check its runtime version and run framework tests
+        default: false
+        type: boolean
       dry-run:
         description: Build and validate without pushing a tag
         default: true
@@ -32,7 +32,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: component-release-${{ github.repository }}-${{ inputs.version }}
+  group: component-release-${{ github.repository }}
   cancel-in-progress: false
 jobs:
   release:
@@ -63,25 +63,32 @@ jobs:
       - name: Build component
         id: build
         env:
-          VERSION: ${{ inputs.version }}
+          FRAMEWORK: ${{ inputs.framework }}
+          DRY_RUN: ${{ inputs.dry-run }}
           MAIN: ${{ inputs.main }}
-        run: >-
-          node tooling/scripts/build.mjs
-          --source "$GITHUB_WORKSPACE/component"
-          --output "$GITHUB_WORKSPACE/dist"
-          --version "$VERSION"
-          --repository "$GITHUB_REPOSITORY"
-          --main "$MAIN"
+        run: |
+          args=()
+          if [ "$FRAMEWORK" = "true" ]; then args+=(--framework); fi
+          if [ "$DRY_RUN" != "true" ]; then args+=(--publish); fi
+          node tooling/scripts/build.mjs \
+            --source "$GITHUB_WORKSPACE/component" \
+            --output "$GITHUB_WORKSPACE/dist" \
+            --repository "$GITHUB_REPOSITORY" \
+            --main "$MAIN" "${args[@]}"
+      - name: Test framework
+        if: inputs.framework
+        working-directory: component
+        run: node --test test/*.test.cjs
       - name: Upload build for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: component-${{ inputs.version }}
+          name: component-${{ steps.build.outputs.version }}
           path: dist/
           if-no-files-found: error
       - name: Publish tag or validate dry run
         env:
           SOURCE_DIR: ${{ github.workspace }}/component
           OUTPUT_DIR: ${{ github.workspace }}/dist
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.build.outputs.version }}
           DRY_RUN: ${{ inputs.dry-run }}
         run: node tooling/scripts/publish.mjs

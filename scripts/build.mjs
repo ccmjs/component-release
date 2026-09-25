@@ -4,15 +4,8 @@ import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { minify } from 'terser';
 import CleanCSS from 'clean-css';
-import semver from 'semver';
-
-export function validateVersion(version) {
-  const parsed = typeof version === 'string' ? semver.parse(version) : null;
-  const canonical = parsed && parsed.version + (parsed.build.length ? '+' + parsed.build.join('.') : '');
-  if (!parsed || canonical !== version)
-    throw new Error('Version must be canonical SemVer without a v prefix (e.g. 1.2.3 or 1.2.3-beta.1).');
-  return version;
-}
+import { readVersion, validatePublication } from './version.mjs';
+export { validateVersion } from './version.mjs';
 
 async function filesIn(root, relative = '') {
   const files = [];
@@ -26,8 +19,7 @@ async function filesIn(root, relative = '') {
   return files.sort();
 }
 
-export async function build({ source, output, version, repository, main }) {
-  validateVersion(version);
+export async function build({ source, output, repository, main, dryRun = true, framework = false }) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? ''))
     throw new Error('Repository must have the form owner/name.');
   source = await fs.realpath(source);
@@ -37,14 +29,17 @@ export async function build({ source, output, version, repository, main }) {
   if (overlaps(output, source) || overlaps(source, output))
     throw new Error('Output must be outside the source directory.');
   const roots = await fs.readdir(source, { withFileTypes: true });
-  const candidates = roots.filter(e => e.isFile() && /^ccm\..+\.mjs$/.test(e.name) && !e.name.endsWith('.min.mjs')).map(e => e.name);
+  const candidates = roots.filter(e => e.isFile() && (framework ? e.name === 'ccm.js' : /^ccm\..+\.mjs$/.test(e.name) && !e.name.endsWith('.min.mjs'))).map(e => e.name);
   if (main) {
-    if (path.basename(main) !== main || !main.endsWith('.mjs') || !roots.some(e => e.name === main && e.isFile()))
-      throw new Error('Main must name an existing .mjs file in the source root.');
+    if (path.basename(main) !== main || !/\.(m?js)$/.test(main) || !roots.some(e => e.name === main && e.isFile()))
+      throw new Error('Main must name an existing .js or .mjs file in the source root.');
   } else {
-    if (candidates.length !== 1) throw new Error(`Expected exactly one ccm.*.mjs main file; found ${candidates.length}. Set main explicitly.`);
+    if (candidates.length !== 1) throw new Error(`Expected exactly one main file (ccm.*.mjs or framework ccm.js); found ${candidates.length}. Set main explicitly.`);
     main = candidates[0];
   }
+  const content = await fs.readFile(path.join(source, main), 'utf8');
+  const version = readVersion(content, { module: main.endsWith('.mjs'), framework: framework || main === 'ccm.js' });
+  validatePublication(version, dryRun);
   const files = [main];
   for (const dir of ['resources', 'libs']) {
     const entry = roots.find(e => e.name === dir);
@@ -58,7 +53,7 @@ export async function build({ source, output, version, repository, main }) {
   // Never clean or overwrite an existing directory.
   await fs.mkdir(output);
   const base = `https://cdn.jsdelivr.net/gh/${repository}@v${version}/`;
-  const mainOutput = main.replace(/\.mjs$/, `-${version}.min.mjs`);
+  const mainOutput = main.replace(/\.(m?js)$/, `-${version}.min.$1`);
   const outputNames = new Set(files.map(f => f === main ? mainOutput : f));
   for (const file of files) {
     const isJS = file === main || (file.startsWith('resources/') && /\.(m?js)$/.test(file));
@@ -70,7 +65,7 @@ export async function build({ source, output, version, repository, main }) {
       const content = (await fs.readFile(path.join(source, file), 'utf8')).replaceAll('././', base);
       const result = await minify({ [file]: content }, {
         module: file.endsWith('.mjs'), compress: true, mangle: true,
-        format: { comments: 'some' },
+        format: { comments: /@license|@preserve|@version|^!/ },
         sourceMap: { filename: target, root: 'ccmjs:///', includeSources: true, url: base + target + '.map' }
       });
       await fs.writeFile(destination, result.code);
@@ -88,9 +83,9 @@ export async function build({ source, output, version, repository, main }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
-    const { values } = parseArgs({ options: Object.fromEntries(['source', 'output', 'version', 'repository', 'main'].map(k => [k, { type: 'string' }])) });
+    const { values } = parseArgs({ options: Object.fromEntries(['source', 'output', 'repository', 'main'].map(k => [k, { type: 'string' }]).concat([['publish', { type: 'boolean', default: false }], ['framework', { type: 'boolean', default: false }]])) });
     if (!values.source || !values.output) throw new Error('--source and --output are required.');
-    const result = await build(values);
+    const result = await build({ ...values, dryRun: !values.publish });
     console.log(JSON.stringify(result, null, 2));
     if (process.env.GITHUB_OUTPUT) await fs.appendFile(process.env.GITHUB_OUTPUT, Object.entries(result).map(([k, v]) => `${k}=${v}\n`).join(''));
   } catch (error) {

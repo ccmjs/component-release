@@ -13,7 +13,7 @@ async function fixture(t) {
   const source = path.join(root, 'source');
   await fs.mkdir(source);
   const write = async (name, text) => { await fs.mkdir(path.dirname(path.join(source, name)), { recursive: true }); await fs.writeFile(path.join(source, name), text); };
-  await write('ccm.hello.mjs', 'export const component = { name: "hello", ccm: "././libs/ccm.js", css: "././resources/style.css" };');
+  await write('ccm.hello.mjs', '/** @version 1.2.3 */\nexport const component = { name: "hello", ccm: "././libs/ccm.js", css: "././resources/style.css" };');
   return { root, source, write, output: path.join(root, 'dist'), version: '1.2.3', repository: 'ccmjs/hello' };
 }
 
@@ -101,4 +101,51 @@ test('dry run and publication keep main and working tree unchanged; duplicate ta
   assert.equal(git(['rev-parse', `${result.commit}^`]), head);
   assert.match(git(['ls-tree', '--name-only', result.commit]), /ccm.hello-1.2.3.min.mjs/);
   await assert.rejects(publish(f), /Tag already exists/);
+});
+
+test('version comes only from the documentation header and is retained in output', async t => {
+  const f = await fixture(t);
+  const result = await build({ ...f, version: '9.9.9' });
+  assert.equal(result.version, '1.2.3');
+  assert.match(await fs.readFile(path.join(f.output, result.file), 'utf8'), /@version 1.2.3/);
+});
+
+test('missing, duplicate, misplaced and malformed annotations fail', async t => {
+  const f = await fixture(t);
+  for (const content of [
+    'export const component = {};',
+    '/** @version 1.2.3 */\n/** @version 1.2.3 */\nexport const component = {};',
+    '/** @version v1.2.3 */\nexport const component = {};',
+    '/** @version 1.2 */\nexport const component = {};',
+    '/** @version */\nexport const component = {};',
+    'export const component = {};\n/** @version 1.2.3 */',
+    'const text = "/** @version 1.2.3 */"; export const component = {};'
+  ]) {
+    await f.write('ccm.hello.mjs', content);
+    await assert.rejects(build(f), /version|SemVer/);
+  }
+});
+
+test('development versions build in dry runs but cannot be published', async t => {
+  const f = await fixture(t);
+  await f.write('ccm.hello.mjs', '/** @version 1.3.0-dev.1 */\nexport const component = {};');
+  assert.equal((await build(f)).version, '1.3.0-dev.1');
+  await assert.rejects(build({ ...f, output: path.join(f.root, 'publish'), dryRun: false }), /dry run/);
+  await assert.rejects(publish({ ...f, version: '1.3.0-dev.1' }), /dry run/);
+});
+
+test('framework uses script semantics, checks runtime version and creates .js output', async t => {
+  const f = await fixture(t);
+  const header = '"use strict";\n/**\n * @version 28.0.0\n */\n';
+  await f.write('ccm.js', header + '{ const ccm = { version: "28.0.0" }; window.ccm = ccm; }');
+  const result = await build({ ...f, framework: true });
+  assert.equal(result.file, 'ccm-28.0.0.min.js');
+  const { runInNewContext } = await import('node:vm');
+  const window = {};
+  runInNewContext(await fs.readFile(path.join(f.output, result.file), 'utf8'), { window });
+  assert.equal(window.ccm.version, result.version);
+  for (const body of ['const ccm = { version: "27.0.0" };', 'const ccm = { version: getVersion() };', 'const ccm = {};']) {
+    await f.write('ccm.js', header + body);
+    await assert.rejects(build({ ...f, main: 'ccm.js', output: path.join(f.root, 'invalid') }), /ccm.version/);
+  }
 });
