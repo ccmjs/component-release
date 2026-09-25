@@ -1,0 +1,87 @@
+name: Release component
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Component SemVer without v prefix
+        required: true
+        type: string
+      tooling-ref:
+        description: Same component-release tag or full commit SHA as the workflow uses reference
+        required: true
+        type: string
+      source-ref:
+        description: Component branch, tag or commit to release
+        default: main
+        type: string
+      main:
+        description: Optional main .mjs filename; otherwise exactly one ccm.*.mjs is required
+        default: ''
+        type: string
+      dry-run:
+        description: Build and validate without pushing a tag
+        default: true
+        type: boolean
+    outputs:
+      url:
+        description: Component CDN URL (available only after a real release)
+        value: ${{ jobs.release.outputs.url }}
+      tag:
+        description: Component tag
+        value: ${{ jobs.release.outputs.tag }}
+permissions:
+  contents: write
+concurrency:
+  group: component-release-${{ github.repository }}-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.build.outputs.url }}
+      tag: ${{ steps.build.outputs.tag }}
+    steps:
+      - name: Checkout component
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source-ref }}
+          path: component
+          fetch-depth: 0
+      - name: Checkout release tools
+        uses: actions/checkout@v4
+        with:
+          repository: ccmjs/component-release
+          ref: ${{ inputs.tooling-ref }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install locked build dependencies
+        working-directory: tooling
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build component
+        id: build
+        env:
+          VERSION: ${{ inputs.version }}
+          MAIN: ${{ inputs.main }}
+        run: >-
+          node tooling/scripts/build.mjs
+          --source "$GITHUB_WORKSPACE/component"
+          --output "$GITHUB_WORKSPACE/dist"
+          --version "$VERSION"
+          --repository "$GITHUB_REPOSITORY"
+          --main "$MAIN"
+      - name: Upload build for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-${{ inputs.version }}
+          path: dist/
+          if-no-files-found: error
+      - name: Publish tag or validate dry run
+        env:
+          SOURCE_DIR: ${{ github.workspace }}/component
+          OUTPUT_DIR: ${{ github.workspace }}/dist
+          VERSION: ${{ inputs.version }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: node tooling/scripts/publish.mjs
