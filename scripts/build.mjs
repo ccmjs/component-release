@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { minify } from 'terser';
@@ -78,7 +79,14 @@ export async function build({ source, output, repository, main, dryRun = true, f
       await fs.copyFile(path.join(source, file), destination);
     }
   }
-  return { version, tag: `v${version}`, file: mainOutput, url: base + mainOutput };
+  // Hash the final bytes, including the sourceMappingURL comment. Do not rewrite afterward.
+  const integrity = 'sha384-' + createHash('sha384')
+    .update(await fs.readFile(path.join(output, mainOutput))).digest('base64');
+  const url = base + mainOutput;
+  const result = { version, tag: `v${version}`, file: mainOutput, url, integrity };
+  if (framework || main === 'ccm.js')
+    result.snippet = `<script src="${url}" integrity="${integrity}" crossorigin="anonymous"></script>`;
+  return result;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
@@ -87,6 +95,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
     if (!values.source || !values.output) throw new Error('--source and --output are required.');
     const result = await build({ ...values, dryRun: !values.publish });
     console.log(JSON.stringify(result, null, 2));
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      const summary = [
+        '## Build prepared: ' + result.tag,
+        '',
+        'The CDN URL becomes available only after successful publication. A dry run does not publish it.',
+        '',
+        '**CDN URL:** ' + result.url,
+        '',
+        '**Subresource Integrity (SHA-384):**',
+        '',
+        '```text', result.integrity, '```',
+        ...(result.snippet ? ['', '**Embed this framework version:**', '', '```html', result.snippet, '```'] : []),
+        '',
+        'The hash covers the exact generated main file, including its source map comment. Update the URL and hash together when changing versions.',
+        '',
+      ].join('\n');
+      await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
+    }
     if (process.env.GITHUB_OUTPUT) await fs.appendFile(process.env.GITHUB_OUTPUT, Object.entries(result).map(([k, v]) => `${k}=${v}\n`).join(''));
   } catch (error) {
     console.error(error.message);

@@ -26,6 +26,9 @@ on:
       url:
         description: Component CDN URL (available only after a real release)
         value: ${{ jobs.release.outputs.url }}
+      integrity:
+        description: SHA-384 SRI value of the final main file
+        value: ${{ jobs.release.outputs.integrity }}
       tag:
         description: Component tag
         value: ${{ jobs.release.outputs.tag }}
@@ -40,6 +43,7 @@ jobs:
     outputs:
       url: ${{ steps.build.outputs.url }}
       tag: ${{ steps.build.outputs.tag }}
+      integrity: ${{ steps.build.outputs.integrity }}
     steps:
       - name: Checkout component
         uses: actions/checkout@v4

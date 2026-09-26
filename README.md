@@ -22,7 +22,7 @@ Commit the caller workflow to the component's default branch, then open **Action
 | `framework` | `false` | Select `ccm.js`, verify its runtime version and run `node --test test/*.test.cjs` |
 | `dry-run` | `true` | Build and validate without publishing |
 
-The workflow returns `url` and `tag`. During dry runs the URL is prospective and is not published. This also applies to development versions, which cannot be published. Every successful build is uploaded as an Actions artifact, even before publication.
+The workflow returns `url`, `tag` and `integrity` (the SHA-384 SRI value of the final main file). During dry runs the URL is prospective and is not published. This also applies to development versions, which cannot be published. Every successful build is uploaded as an Actions artifact, even before publication.
 
 ## Build contents
 
@@ -36,7 +36,7 @@ For version `1.2.3`, `ccm.hello.mjs` becomes `ccm.hello-1.2.3.min.mjs` plus `ccm
 
 Every `././` marker in the main component and resource JavaScript is replaced with `https://cdn.jsdelivr.net/gh/OWNER/REPO@vVERSION/`. This intentionally changes the old workflow's GitHub Pages behavior: included resources and libraries are now pinned to the component tag. External absolute URLs remain unchanged. Markers in CSS, HTML and unprocessed libraries are not transformed. Use ordinary relative URLs within those files.
 
-No bundling, arbitrary import rewriting, component-object version injection, integrity hashes, GitHub Releases or changelog generation is performed. Extra root modules are not included; put supporting modules in `resources/` or `libs/`. Dependencies that refer back to the unversioned main filename need an explicit adjustment before release. Existing `.map` files next to resource JavaScript are rejected to prevent collisions; supply source resources without stale generated maps. Symbolic links in included trees are rejected.
+No bundling, arbitrary import rewriting, component-object version injection, GitHub Releases or changelog generation is performed. Extra root modules are not included; put supporting modules in `resources/` or `libs/`. Dependencies that refer back to the unversioned main filename need an explicit adjustment before release. Existing `.map` files next to resource JavaScript are rejected to prevent collisions; supply source resources without stale generated maps. Symbolic links in included trees are rejected.
 
 ## Publication
 
@@ -83,3 +83,21 @@ For framework repositories set `framework: true`. The `ccm.js` header and its `c
 This is a breaking workflow-interface change. Publish the tooling source as `v2.0.0` first, then update **both** tooling references in callers to `v2.0.0`, remove the old `version` dispatch input and `with.version`, and add the source annotation. Existing callers pinned to `v1.0.0` continue using the old manual-input workflow. Do not move the old tooling tag.
 
 Locally, builds default to dry-run eligibility. Add `--publish` to the build command to reject development versions (this flag alone does not push anything), and `--framework` for framework selection and version consistency. The local build command does not run source tests; run `node --test test/*.test.cjs` from the framework repository separately.
+
+## Subresource Integrity (SRI)
+
+After minification and source map generation, the builder computes SHA-384 from
+exactly the bytes of the generated main file, including its source map comment.
+The CLI JSON and workflow outputs include the `integrity` value. For framework
+builds, the CLI also returns a ready-to-copy `snippet` with the pinned CDN URL,
+`integrity="sha384-…"` and `crossorigin="anonymous"`.
+
+The GitHub Actions run summary displays the CDN URL, SRI value and, for framework
+builds, the complete HTML script tag. The summary describes a prepared build:
+the URL is only available after successful publication, never merely because a
+dry run succeeded. Change the URL and hash together when selecting a new version;
+never edit the generated JavaScript after calculating its hash.
+
+To activate changes to this tooling, publish a new tooling tag and update both
+`uses` and `tooling-ref` in consuming workflows to that tag (or the same published
+commit SHA). Existing callers pinned to `v2.0.0` keep the old behavior.

@@ -149,3 +149,38 @@ test('framework uses script semantics, checks runtime version and creates .js ou
     await assert.rejects(build({ ...f, main: 'ccm.js', output: path.join(f.root, 'invalid') }), /ccm.version/);
   }
 });
+
+test('SRI matches the final framework bytes and the CLI reports a copyable embed in Actions', async t => {
+  const f = await fixture(t);
+  await f.write('ccm.js', '/** @version 28.0.0 */\n{ const ccm = { version: "28.0.0" }; window.ccm = ccm; }');
+  const summary = path.join(f.root, 'summary.md');
+  const outputs = path.join(f.root, 'outputs.txt');
+  await fs.writeFile(summary, 'Existing summary\n');
+  const { fileURLToPath } = await import('node:url');
+  const cli = fileURLToPath(new URL('../scripts/build.mjs', import.meta.url));
+  const result = JSON.parse(execFileSync(process.execPath, [cli,
+    '--source', f.source, '--output', f.output, '--repository', 'ccmjs/framework', '--framework',
+  ], { encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: summary, GITHUB_OUTPUT: outputs } }));
+  const bytes = await fs.readFile(path.join(f.output, result.file));
+  assert.match(bytes.toString(), /sourceMappingURL=/);
+  const expected = 'sha384-' + Buffer.from(await crypto.subtle.digest('SHA-384', bytes)).toString('base64');
+  assert.equal(result.integrity, expected);
+  assert.equal(result.snippet, `<script src="https://cdn.jsdelivr.net/gh/ccmjs/framework@v28.0.0/ccm-28.0.0.min.js" integrity="${expected}" crossorigin="anonymous"></script>`);
+  const changed = Buffer.from(await crypto.subtle.digest('SHA-384', Buffer.concat([bytes, Buffer.from('\n')]))).toString('base64');
+  assert.notEqual(result.integrity, 'sha384-' + changed);
+  const markdown = await fs.readFile(summary, 'utf8');
+  assert.ok(markdown.startsWith('Existing summary\n'));
+  assert.ok(markdown.includes('```html\n' + result.snippet + '\n```'));
+  assert.match(markdown, /dry run does not publish/);
+  const output = await fs.readFile(outputs, 'utf8');
+  assert.ok(output.includes(`integrity=${expected}\n`));
+  assert.ok(output.includes(`snippet=${result.snippet}\n`));
+});
+
+test('component builds return their final-byte SRI without a framework embed snippet', async t => {
+  const f = await fixture(t);
+  const result = await build(f);
+  const bytes = await fs.readFile(path.join(f.output, result.file));
+  assert.equal(result.integrity, 'sha384-' + Buffer.from(await crypto.subtle.digest('SHA-384', bytes)).toString('base64'));
+  assert.equal(result.snippet, undefined);
+});
