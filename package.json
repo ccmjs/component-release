@@ -1,6 +1,6 @@
 {
   "name": "@ccmjs/component-release",
-  "version": "2.0.0",
+  "version": "2.1.1",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,9 +11,9 @@
     "build": "node scripts/build.mjs"
   },
   "dependencies": {
-    "clean-css": "5.3.3",
+    "acorn": "8.15.0",
+    "lightningcss": "1.33.0",
     "semver": "7.7.2",
-    "terser": "5.44.0",
-    "acorn": "8.15.0"
+    "terser": "5.44.0"
   }
 }

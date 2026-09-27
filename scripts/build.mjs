@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { minify } from 'terser';
-import CleanCSS from 'clean-css';
+import { transform, Features } from 'lightningcss';
 import { readVersion, validatePublication } from './version.mjs';
 export { validateVersion } from './version.mjs';
 
@@ -72,9 +72,12 @@ export async function build({ source, output, repository, main, dryRun = true, f
       await fs.writeFile(destination, result.code);
       await fs.writeFile(destination + '.map', result.map);
     } else if (file.startsWith('resources/') && file.endsWith('.css')) {
-      const result = new CleanCSS({ rebase: false }).minify(await fs.readFile(path.join(source, file), 'utf8'));
-      if (result.errors.length) throw new Error(`CSS errors in ${file}: ${result.errors.join('; ')}`);
-      await fs.writeFile(destination, result.styles);
+      // Lower native nesting without losing selector scope or rebasing asset URLs.
+      const result = transform({
+        filename: file, code: await fs.readFile(path.join(source, file)),
+        minify: true, include: Features.Nesting, errorRecovery: false,
+      });
+      await fs.writeFile(destination, result.code);
     } else {
       await fs.copyFile(path.join(source, file), destination);
     }

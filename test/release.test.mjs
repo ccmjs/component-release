@@ -184,3 +184,31 @@ test('component builds return their final-byte SRI without a framework embed sni
   assert.equal(result.integrity, 'sha384-' + Buffer.from(await crypto.subtle.digest('SHA-384', bytes)).toString('base64'));
   assert.equal(result.snippet, undefined);
 });
+
+test('CSS nesting retains avatar size, component scope, states and container queries', async t => {
+  const f = await fixture(t);
+  await f.write('resources/style.css', `.root {
+    &, & * { box-sizing: border-box; }
+    .profile {
+      display: flex;
+      img { width: 1.75rem; height: 1.75rem; }
+      .logout { .icon > svg, .icon > img { width: 100%; } }
+    }
+    button { &:hover:not(:disabled) { color: red; } }
+    @container (width < 20rem) { .name { display: none; } }
+  }`);
+  await build(f);
+  const css = await fs.readFile(path.join(f.output, 'resources/style.css'), 'utf8');
+  assert.match(css, /\.root \.profile img\{[^}]*width:1\.75rem[^}]*height:1\.75rem/);
+  assert.match(css, /\.root \.profile \.logout \.icon>/);
+  assert.match(css, /\.root button:hover:not\(:disabled\)/);
+  assert.match(css, /@container[^{}]+\{\.root \.name\{display:none\}/);
+  assert.doesNotMatch(css, /(?:^|\})\.profile\{/);
+  assert.doesNotMatch(css, /&/);
+});
+
+test('invalid CSS fails the build instead of producing a damaged stylesheet', async t => {
+  const f = await fixture(t);
+  await f.write('resources/style.css', '.root { color: red; } }');
+  await assert.rejects(build(f));
+});
