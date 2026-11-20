@@ -26,7 +26,7 @@ The workflow returns `url`, `tag` and `integrity` (the SHA-384 SRI value of the 
 
 ## Build contents
 
-For version `1.2.3`, `ccm.hello.mjs` becomes `ccm.hello-1.2.3.min.mjs` plus `ccm.hello-1.2.3.min.mjs.map`. Terser minifies JavaScript and handles `.mjs` as ES modules. Maps embed the transformed source and link to the exact version on jsDelivr.
+For version `1.2.3`, `ccm.hello.mjs` is shipped as both `ccm.hello-1.2.3.mjs` and `ccm.hello-1.2.3.min.mjs`, plus `ccm.hello-1.2.3.min.mjs.map`. Terser minifies JavaScript and handles `.mjs` as ES modules. Maps embed the transformed source and link to the exact version on jsDelivr.
 
 - `resources/` is included recursively. JS, MJS and CSS are minified **under their original filenames**, preserving resource and import references. JavaScript gets an adjacent `.map`. Lightning CSS compiles native CSS nesting into scoped selectors before minification. CSS URLs are not rebased.
 - Other resources (including images and HTML) are copied byte for byte.
@@ -78,7 +78,7 @@ After releasing `1.2.3`, set the next development version (for example `1.3.0-de
 
 Before publishing, replace the development version with the intended release version and commit and push it. Select **Run workflow**, first with dry-run enabled, then disabled. The publisher refuses an existing remote tag in both modes.
 
-For framework repositories set `framework: true`. The `ccm.js` header and its `const ccm = { version: "..." }` value must match. For `28.0.0`, output is `ccm-28.0.0.min.js` and its `.map`. Framework source tests under `test/*.test.cjs` must be committed; the workflow fails if they are missing or fail. An explicit `main: ccm.js` also checks version consistency, but use `framework: true` to enable the tests.
+For framework repositories set `framework: true`. The `ccm.js` header must match the string in `version: () => "29.0.0"` (or the string property used in 28.x). The builder checks the literal without executing the framework. For 29.0.0 it ships `ccm-29.0.0.js`, `ccm-29.0.0.min.js` and the minified file’s source map. Framework source tests under `test/*.test.cjs` must be committed; the workflow fails if they are missing or fail. An explicit `main: ccm.js` also checks version consistency, but use `framework: true` to enable the tests.
 
 This is a breaking workflow-interface change. Publish the tooling source as `v2.0.0` first, then update **both** tooling references in callers to `v2.0.0`, remove the old `version` dispatch input and `with.version`, and add the source annotation. Existing callers pinned to `v1.0.0` continue using the old manual-input workflow. Do not move the old tooling tag.
 

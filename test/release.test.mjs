@@ -42,6 +42,7 @@ test('build preserves resource URLs, modules, binary assets, licenses and source
   const map = JSON.parse(await fs.readFile(path.join(f.output, result.file + '.map')));
   assert.equal(map.file, result.file);
   assert.deepEqual(map.sources, ['ccm.hello.mjs']);
+  assert.equal(await fs.readFile(path.join(f.output, 'ccm.hello-1.2.3.mjs'), 'utf8'), map.sourcesContent[0]);
   assert.match(map.sourcesContent[0], /cdn.jsdelivr.net/);
   assert.equal((await import(path.join(f.output, 'resources/nested/helper.mjs'))).message, 'hello');
   assert.match(await fs.readFile(path.join(f.output, 'resources/style.css'), 'utf8'), /url\((?:"|')?\.\/image\.png/);
@@ -99,6 +100,7 @@ test('dry run and publication keep main and working tree unchanged; duplicate ta
   assert.equal(git(['ls-remote', 'origin', 'refs/heads/main']), remoteMain);
   assert.equal(git(['status', '--porcelain']), '');
   assert.equal(git(['rev-parse', `${result.commit}^`]), head);
+  assert.ok(git(['ls-tree', '--name-only', result.commit]).split('\n').includes('ccm.hello-1.2.3.mjs'));
   assert.match(git(['ls-tree', '--name-only', result.commit]), /ccm.hello-1.2.3.min.mjs/);
   await assert.rejects(publish(f), /Tag already exists/);
 });
@@ -144,7 +146,14 @@ test('framework uses script semantics, checks runtime version and creates .js ou
   const window = {};
   runInNewContext(await fs.readFile(path.join(f.output, result.file), 'utf8'), { window });
   assert.equal(window.ccm.version, result.version);
-  for (const body of ['const ccm = { version: "27.0.0" };', 'const ccm = { version: getVersion() };', 'const ccm = {};']) {
+  const callable = header + '{ const ccm = { version: () => "28.0.0" }; window.ccm = ccm; }';
+  await f.write('ccm.js', callable);
+  const output = path.join(f.root, 'callable');
+  await build({ ...f, output, framework: true });
+  assert.equal(await fs.readFile(path.join(output, 'ccm-28.0.0.js'), 'utf8'), callable);
+  runInNewContext(await fs.readFile(path.join(output, result.file), 'utf8'), { window });
+  assert.equal(window.ccm.version(), result.version);
+  for (const body of ['const ccm = { version: () => "29.0.0" };', 'const ccm = { version: () => getVersion() };', 'const ccm = { version: "27.0.0" };', 'const ccm = { version: getVersion() };', 'const ccm = {};']) {
     await f.write('ccm.js', header + body);
     await assert.rejects(build({ ...f, main: 'ccm.js', output: path.join(f.root, 'invalid') }), /ccm.version/);
   }

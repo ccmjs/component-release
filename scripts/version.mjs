@@ -32,7 +32,7 @@ export function readVersion(content, { module = true, framework = false } = {}) 
       if (node.type === 'VariableDeclarator' && node.id.name === 'ccm' && node.init?.type === 'ObjectExpression') {
         for (const prop of node.init.properties) {
           if (!prop.computed && (prop.key?.name ?? prop.key?.value) === 'version')
-            versions.push(prop.value?.type === 'Literal' ? prop.value.value : undefined);
+            versions.push(frameworkVersionLiteral(prop.value));
         }
       }
       for (const value of Object.values(node)) {
@@ -42,7 +42,14 @@ export function readVersion(content, { module = true, framework = false } = {}) 
     }
     visit(ast);
     if (versions.length !== 1 || versions[0] !== version)
-      throw new Error('Framework ccm.version must be a string literal matching @version.');
+      throw new Error('Framework ccm.version must match @version as a string literal or a zero-argument arrow returning that literal.');
   }
   return version;
+}
+
+function frameworkVersionLiteral(value) {
+  if (value.type === 'Literal') return value.value;
+  if (value.type === 'ArrowFunctionExpression' && !value.async &&
+      value.params.length === 0 && value.body.type === 'Literal')
+    return value.body.value;
 }

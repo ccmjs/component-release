@@ -55,6 +55,7 @@ export async function build({ source, output, repository, main, dryRun = true, f
   await fs.mkdir(output);
   const base = `https://cdn.jsdelivr.net/gh/${repository}@v${version}/`;
   const mainOutput = main.replace(/\.(m?js)$/, `-${version}.min.$1`);
+  const readableOutput = main.replace(/\.(m?js)$/, `-${version}.$1`);
   const outputNames = new Set(files.map(f => f === main ? mainOutput : f));
   for (const file of files) {
     const isJS = file === main || (file.startsWith('resources/') && /\.(m?js)$/.test(file));
@@ -64,6 +65,7 @@ export async function build({ source, output, repository, main, dryRun = true, f
     await fs.mkdir(path.dirname(destination), { recursive: true });
     if (isJS) {
       const content = (await fs.readFile(path.join(source, file), 'utf8')).replaceAll('././', base);
+      if (file === main) await fs.writeFile(path.join(output, readableOutput), content);
       const result = await minify({ [file]: content }, {
         module: file.endsWith('.mjs'), compress: true, mangle: true,
         format: { comments: /@license|@preserve|@version|^!/ },
