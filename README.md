@@ -4,9 +4,9 @@ Shared build and release tooling for ccmjs components. A reusable GitHub Actions
 
 ## Use from a component repository
 
-After this repository has been pushed and tooling release `v2.1.1` has been tagged, copy [`examples/tag.yml`](examples/tag.yml) into the component repository as `.github/workflows/tag.yml`. Replace any existing release workflow there.
+After this repository has been pushed and tooling release `v2.2.0` has been tagged, copy [`examples/tag.yml`](examples/tag.yml) into the component repository as `.github/workflows/tag.yml`. Replace any existing release workflow there.
 
-Both `uses: ...@v2.1.1` and `tooling-ref: v2.1.1` must refer to the **same tooling version**. A full commit SHA in both places provides an immutable pin. These references select the release tooling; the source header `@version` selects the component version. Before the first tooling tag exists, use the same published commit SHA in both places.
+Both `uses: ...@v2.2.0` and `tooling-ref: v2.2.0` must refer to the **same tooling version**. A full commit SHA in both places provides an immutable pin. These references select the release tooling; the source header `@version` selects the component version. Before the first tooling tag exists, use the same published commit SHA in both places.
 
 A reusable workflow runs in the caller's context: checkout would otherwise retrieve only the component repository. `tooling-ref` explicitly pins the separate tooling checkout. See [GitHub's reusable workflow documentation](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusing-workflow-configurations).
 
